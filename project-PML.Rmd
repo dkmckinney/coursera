@@ -6,7 +6,7 @@ output: pdf_document
 ```{r echo=FALSE, eval=FALSE}
 if(FALSE) {
 
-project.Rmd (Practical Machine Learning project)
+project-PML.Rmd (Practical Machine Learning project)
 
 About the data set:
 
@@ -15,6 +15,10 @@ This data set attempts to define quality of execution and investigate three aspe
 Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
 
 Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg).
+
+The primary code to preprocess the data is located [here](http://github.com/bpoweski/practical-machine-learning/blob/master/project.R).
+
+There is additional code within the knitr markdown file [here](http://github.com/bpoweski/practical-machine-learning/blob/master/project.Rmd).
 
 #### The goal of your project is to predict the manner in which they did the exercise. 
 This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
@@ -34,26 +38,37 @@ if (file.exists("c:/windows/win.ini")) {
   } else setwd("/home/derec/mnt/project/mooc/Practical Machine Learning/project") 
 ```
 
-## Data Processing
 
+#### Data Processing
 
-#### Load Necessary Libraries
-
-```{r load_libraries, echo=T}
+```{r load_libraries, echo=TRUE}
+# load necessary libraries
 suppressWarnings(suppressMessages(library(caret)))
+suppressWarnings(suppressMessages(library(corrplot)))
+suppressWarnings(suppressMessages(library(FactoMineR)))
 suppressWarnings(suppressMessages(library(grDevices)))
 suppressWarnings(suppressMessages(library(knitr)))
 suppressWarnings(suppressMessages(library(randomForest)))
 ```
 
-#### Loading and Pre-processing
 
-```{r load_data, cache=TRUE}
-tmp <- read.csv("pml-training.csv", na.strings=c("NA","","#DIV/0!"," "), stringsAsFactors=T)
-#dim(tmp)
-names(tmp)[1] <- "id" # row number is unique, so use as id field
-tmp.complete <- Filter(function(x)(length(unique(x))>1), tmp) # keep columns with > 1 unique value
-#keep <- colnames(tmp.complete) # save names of columns kept and apply to test set
+```{r load_data}
+# download files if they do not exist
+if (!file.exists("pml-training.csv")) {
+    download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
+        destfile = "pml-training.csv")
+}
+
+if (!file.exists("pml-testing.csv")) {
+    download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", 
+        destfile = "pml-testing.csv")
+}
+
+# read training set and handle na strings
+tmp.train <- read.csv("pml-training.csv", na.strings=c("NA","","#DIV/0!"," "), stringsAsFactors=T)
+names(tmp.train)[1] <- "id"
+
+# do not keep columns with mostly missing values or irrelevant fields.
 keep <- c("id","roll_belt", "pitch_belt", "yaw_belt", "total_accel_belt", 
     "gyros_belt_x", "gyros_belt_y", "gyros_belt_z", "accel_belt_x", "accel_belt_y", 
     "accel_belt_z", "magnet_belt_x", "magnet_belt_y", "magnet_belt_z", "roll_arm", 
@@ -66,97 +81,116 @@ keep <- c("id","roll_belt", "pitch_belt", "yaw_belt", "total_accel_belt",
     "yaw_forearm", "total_accel_forearm", "gyros_forearm_x", "gyros_forearm_y", 
     "gyros_forearm_z", "accel_forearm_x", "accel_forearm_y", "accel_forearm_z", 
     "magnet_forearm_x", "magnet_forearm_y", "magnet_forearm_z","classe")
-#dim(tmp.complete)
-#colnames(tmp.complete)
-train <- tmp.complete[,keep]
-#dim(train)
-#colnames(train)
-#write.csv(train,"train.csv",row.names=F) # save for RM input
 
-tmp <- read.csv("pml-testing.csv", na.strings=c("NA","","#DIV/0!"," "), stringsAsFactors=T)
-tmp$X <- tmp$problem_id # copy problem_id to row number field and use as id
-names(tmp)[1] <- "id" # label attribute that matches training set label name
-#colnames(tmp)
-tmp <- tmp[,1:159] # do not include "problem_id" field
-tmp$classe <- 'Unk' # add predicted attribute and label as unknown
-test <- tmp[, keep] # use columns that match training set
-#dim(test)
-#colnames(test)
-#write.csv(test,"test.csv",row.names=F) # save for RM input
+train <- tmp.train[,keep]
+
+# load test set and conform it to match training set.
+tmp.test <- read.csv("pml-testing.csv", na.strings=c("NA","","#DIV/0!"," "), stringsAsFactors=T)
+names(tmp.test)[1] <- "id"
+tmp.test$id <- tmp.test$problem_id # copy problem_id to row number field and use as id
+tmp.test <- tmp.test[, -160]
+tmp.test$classe <- ""
+tmp.test <- tmp.test[,keep]
+tmp.test$classe <- factor(tmp.test$classe, levels=c("A","B","C","D","E"))
+test <- tmp.test
+
+# dimensions of data sets
+dim(train)
+dim(test)
+
+# remove unneeded variables.
+rm(tmp.test,tmp.train)
 ```
 
+#### Feature Selection
 
-#### Create reduced training set by identifying and eliminating 95%+ correlated attributes.
+The data set for analysis has 160 attributes, so exploratory analysis with scatter plot matrices is impractical. The first step of this analysis will be the attempt to reduce the number of attributes prior to modeling. Instead of allowing the model to select which attributes to use from the raw data set, I will filter the data to remove irrelevant, and highly correlated attributes prior to modeling.
+
+
 ```{r data_reduction}
-#str(train)
+vis.train <- train[,2:ncol(train)-1]
 
-
-# identify correlated predictors
-#suppressMessages(library(caret))
-#train.cm <- train[,7:153]
-#descrCor <- cor(train.cm, use="na.or.complete")
-#summary(descrCor[upper.tri(descrCor)])
-#noEcho <- findCorrelation(descrCor)
-
-# use cutoff of 95% correlation to filter
-#highlyCorDescr <- findCorrelation(descrCor, cutoff = 0.95)
-#filteredDescr <- train.cm[, -highlyCorDescr]
-#descrCor2 <- cor(filteredDescr)
-#summary(descrCor2[upper.tri(descrCor2)])
-
-# create reduced attribute training set
-#train.r <- train[,-highlyCorDescr]
+# scale and center training set without id or classe attributes.
+vis.train.scale <- scale(vis.train, center=TRUE, scale=TRUE)
+corMat <- cor(vis.train.scale) #compute the correlation matrix
 ```
 
-#### Transformations
+Plot 1: Correlation plot of initial set of predictors. Extreme correlation values are positioned at the left and right edges.
 
-```{r }
-#unique(train$new_window)
-#unique(train$skewness_yaw_dumbbell)
-#train.r <- train[,sapply(train, function(v) var(v, na.rm=TRUE)!=0)]
-#str(train.r)
-#dim(train)
+```{r plot_1, echo=FALSE, fig.height=10, fig.width=10}
+corrplot(corMat, order="FPC", method="color", type="lower", tl.cex=0.75, tl.col=rgb(0,0,0),
+         title="")
 ```
+
+
+```{r}
+# remove highly correlated attributes and re-plot.
+highlyCor <- findCorrelation(corMat, 0.80) # set highly correlated at 0.80
+vis.Filtered.scale <- vis.train.scale[,-highlyCor]
+corMat <- cor(vis.Filtered.scale)
+```
+
+Plot 2: Correlation plot of revised set of predictors.
+
+```{r plot_2, echo=FALSE, fig.height=10, fig.width=10}
+corrplot(corMat, order="FPC", method="color", type="lower", tl.cex=0.8, tl.col=rgb(0, 0, 0), title="")
+
+vis.keep <- colnames(vis.Filtered.scale)
+vis.keep[42] <- "classe"
+
+train <- train[,vis.keep]
+test <- test[,vis.keep]
+
+# remove unneeded variables.
+rm(corMat,vis.Filtered.scale,vis.train,vis.train.scale,highlyCor,vis.keep)
+```
+
 
 #### Modeling
 
-##### Decision Tree Classifier
-```{r}
-# library(rpart)
-# options(digits=3)
-# set.seed(123)
-# tmp.train <- train[,2:54]
-# tmp.test <- test[,2:54]
-# 
-# # create decision tree
-# treemodel1 <- rpart(classe ~ ., data=tmp)
-# printcp(treemodel1)
-# 
-# # predict misclassification count using the tree
-# tmp.test$classe <- predict(treemodel1, newdata=tmp.test, type='class')
-```
-
+Having removed problem attributes, and those that are highly correlated with each other, I will fit a clustering model to predict the outcomes of the testing set.
 
 ```{r randomForest, cache=TRUE}
 set.seed(123)
-tmp.train <- train[,2:54]
-tmp.test <- test[,2:54]
-
-model <- randomForest(classe ~ ., data=tmp.train, ntree=2048)
+mod.train <- train[, 2:ncol(train)]
+mod.test <- test[, 2:ncol(train)]
+model <- randomForest(classe ~ ., data=mod.train, ntree=100)
 model
-tmp.test$classe <- predict(model, tmp.test)
+mod.test$classe <- predict(model, mod.test)
+mod.test$classe
+```
+
+The predicted values proved to be 100% accurate. The predicted outcomes were nearly identical using 50 trees as they were using 2048 trees.
+
+
+#### Principal Component Analysis
+
+```{r pca, fig.height=10, fig.width=10}
+tmp <- read.csv("pml-training.csv", na.strings=c("NA","","#DIV/0!"," "), stringsAsFactors=T)
+names(tmp)[1] <- "id" # row number is unique, so keep as id field
+tmp.train <- tmp[,keep] # do not keep columns with mostly missing values or timestamps.
+
+# PCA with function PCA
+pca.train <- tmp.train
+pca <- PCA(pca.train[,2:53], scale.unit=TRUE, ncp=5, graph=F) # scale all features
+#plot.PCA(pca, axes=c(1, 2), choix="ind", habillage="ind")
+plot.PCA(pca, axes=c(1, 2), choix="ind", habillage="none")
+#dimdesc(pca) # sort the variables most linked to each principal component
+
+# remove unneeded variables.
+rm(pca.train,tmp.train)
 ```
 
 
 ```{r submittal, echo=FALSE}
-pml_write_files = function(x){
-  n = length(x)
-  for(i in 1:n){
-    filename = paste0("submit/problem_id_",i,".txt")
-    write.table(x[i], file=filename, quote=FALSE, row.names=FALSE, col.names=FALSE)
-  }
-}
-pml_write_files(tmp.test$classe)
+# pml_write_files = function(x){
+#   n = length(x)
+#   for(i in 1:n){
+#     filename = paste0("submit/problem_id_", i, ".txt")
+#     write.table(x[i], file=filename, quote=FALSE, row.names=FALSE, col.names=FALSE)
+#   }
+# }
+# pml_write_files(test$classe)
 ```
 
 ------------------------------------------------------------------------------------
@@ -164,3 +198,7 @@ pml_write_files(tmp.test$classe)
 Data for this analysis courtesy of:
 
 Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. 
+
+References:
+
+[1] http://www.r-bloggers.com/introduction-to-feature-selection-for-bioinformaticians-using-r-correlation-matrix-filters-pca-backward-selection/
