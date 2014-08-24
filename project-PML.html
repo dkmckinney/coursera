@@ -170,7 +170,7 @@ corMat &lt;-<span class="st"> </span><span class="kw">cor</span>(vis.Filtered.sc
 </div>
 <div id="modeling-testing-and-out-of-sample-error-rate" class="section level2">
 <h2>Modeling, Testing, and Out-of-sample Error Rate</h2>
-<p>Having removed the problem attributes, and those that are highly correlated with each other, I will fit a Random Forest clustering model to predict the outcomes of the testing set. With random forests, there is no need for cross-validation, or a separate test set to get an unbiased estimate of the test set error. It is estimated internally, during the execution. So, I proceed with training the model on the training data set. I chose random forests because they have several nice theoretical properties:</p>
+<p>Having removed the problem attributes, and those that are highly correlated with each other, I will fit a Random Forest clustering model to predict the outcomes of the testing set. With random forests, <strong>there is no need for cross-validation, or a separate test set to get an unbiased estimate of the test set error.</strong> It is estimated internally, during the execution. So, I proceed with training the model on the training data set. I chose random forests because they have several nice theoretical properties:</p>
 <ul>
 <li>They deal naturally with non-linearity, and assuming linearity in this case would be imprudent.</li>
 <li>There’s no parameter selection involved. While random forest may overfit a given data set, just as any other machine learning algorithm, it has been shown by Breiman that classifier variance does not grow with the number of trees used (unlike with Adaboosted decision trees, for example). Therefore, it’s always better to use more trees, memory and computational power allowing.</li>
@@ -198,7 +198,7 @@ model</code></pre>
 ## C    0   21 3397    4    0   0.0073057
 ## D    0    0   29 3183    4   0.0102612
 ## E    0    0    3    6 3598   0.0024951</code></pre>
-<p>I predict my out-of-sample error to be less than 0.5%. The confusion matrix also looks good, indicating that the model fit the training set well. It may also be instructive to look at the variable importance estimates obtained by the classifier training algorithm.</p>
+<p><strong>I predict my out-of-sample error to be less than 0.5%.</strong> The confusion matrix also looks good, indicating that the model fit the training set well. It may also be instructive to look at the variable importance estimates obtained by the classifier training algorithm.</p>
 <pre class="sourceCode r"><code class="sourceCode r">imp &lt;-<span class="st"> </span><span class="kw">varImp</span>(model)
 imp$Variable &lt;-<span class="st"> </span><span class="kw">row.names</span>(imp)
 imp[<span class="kw">order</span>(imp$Overall, <span class="dt">decreasing =</span> T), ]</code></pre>

@@ -147,7 +147,7 @@ rm(corMat,vis.Filtered.scale,vis.train,vis.train.scale,highlyCor,vis.keep)
 
 ## Modeling, Testing, and Out-of-sample Error Rate
 
-Having removed the problem attributes, and those that are highly correlated with each other, I will fit a Random Forest clustering model to predict the outcomes of the testing set. With random forests, there is no need for cross-validation, or a separate test set to get an unbiased estimate of the test set error. It is estimated internally, during the execution. So, I proceed with training the model on the training data set.
+Having removed the problem attributes, and those that are highly correlated with each other, I will fit a Random Forest clustering model to predict the outcomes of the testing set. With random forests, **there is no need for cross-validation, or a separate test set to get an unbiased estimate of the test set error.** It is estimated internally, during the execution. So, I proceed with training the model on the training data set.
 I chose random forests because they have several nice theoretical properties:
 
 * They deal naturally with non-linearity, and assuming linearity in this case would be imprudent.
@@ -166,7 +166,7 @@ model <- randomForest(classe ~ ., data=mod.train, ntree=128)
 model
 ```
 
-I predict my out-of-sample error to be less than 0.5%. The confusion matrix also looks good, indicating that the model fit the training set well. It may also be instructive to look at the variable importance estimates obtained by the classifier training algorithm.
+**I predict my out-of-sample error to be less than 0.5%.** The confusion matrix also looks good, indicating that the model fit the training set well. It may also be instructive to look at the variable importance estimates obtained by the classifier training algorithm.
 
 ```{r}
 imp <- varImp(model)
